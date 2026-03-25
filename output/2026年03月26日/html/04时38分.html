@@ -1,0 +1,889 @@
+
+    <!DOCTYPE html>
+    <html>
+    <head>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <title>热点新闻分析</title>
+        <style>
+            * { box-sizing: border-box; }
+            body { 
+                font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
+                margin: 0; 
+                padding: 16px; 
+                background: #fafafa;
+                color: #333;
+                line-height: 1.5;
+            }
+
+            .container {
+                max-width: 600px;
+                margin: 0 auto;
+                background: white;
+                border-radius: 12px;
+                overflow: hidden;
+                box-shadow: 0 2px 16px rgba(0,0,0,0.06);
+            }
+
+            .header {
+                background: linear-gradient(135deg, #4f46e5 0%, #7c3aed 100%);
+                color: white;
+                padding: 32px 24px;
+                text-align: center;
+            }
+
+            .header-title {
+                font-size: 22px;
+                font-weight: 700;
+                margin: 0 0 20px 0;
+            }
+
+            .header-info {
+                display: grid;
+                grid-template-columns: 1fr 1fr;
+                gap: 16px;
+                font-size: 14px;
+                opacity: 0.95;
+            }
+
+            .info-item {
+                text-align: center;
+            }
+
+            .info-label {
+                display: block;
+                font-size: 12px;
+                opacity: 0.8;
+                margin-bottom: 4px;
+            }
+
+            .info-value {
+                font-weight: 600;
+                font-size: 16px;
+            }
+
+            .content {
+                padding: 24px;
+            }
+
+            .word-group {
+                margin-bottom: 40px;
+            }
+
+            .word-group:first-child {
+                margin-top: 0;
+            }
+
+            .word-header {
+                display: flex;
+                align-items: center;
+                justify-content: space-between;
+                margin-bottom: 20px;
+                padding-bottom: 8px;
+                border-bottom: 1px solid #f0f0f0;
+            }
+
+            .word-info {
+                display: flex;
+                align-items: center;
+                gap: 12px;
+            }
+
+            .word-name {
+                font-size: 17px;
+                font-weight: 600;
+                color: #1a1a1a;
+            }
+
+            .word-count {
+                color: #666;
+                font-size: 13px;
+                font-weight: 500;
+            }
+
+            .word-count.hot { color: #dc2626; font-weight: 600; }
+            .word-count.warm { color: #ea580c; font-weight: 600; }
+
+            .word-index {
+                color: #999;
+                font-size: 12px;
+            }
+
+            .news-item {
+                margin-bottom: 20px;
+                padding: 16px 0;
+                border-bottom: 1px solid #f5f5f5;
+                position: relative;
+                display: flex;
+                gap: 12px;
+                align-items: center;
+            }
+
+            .news-item:last-child {
+                border-bottom: none;
+            }
+
+            .news-item.new::after {
+                content: "NEW";
+                position: absolute;
+                top: 12px;
+                right: 0;
+                background: #fbbf24;
+                color: #92400e;
+                font-size: 9px;
+                font-weight: 700;
+                padding: 3px 6px;
+                border-radius: 4px;
+                letter-spacing: 0.5px;
+            }
+
+            .news-number {
+                color: #999;
+                font-size: 13px;
+                font-weight: 600;
+                min-width: 20px;
+                text-align: center;
+                flex-shrink: 0;
+                background: #f8f9fa;
+                border-radius: 50%;
+                width: 24px;
+                height: 24px;
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                align-self: flex-start;
+                margin-top: 8px;
+            }
+
+            .news-content {
+                flex: 1;
+                min-width: 0;
+                padding-right: 40px;
+            }
+
+            .news-item.new .news-content {
+                padding-right: 50px;
+            }
+
+            .news-header {
+                display: flex;
+                align-items: center;
+                gap: 8px;
+                margin-bottom: 8px;
+                flex-wrap: wrap;
+            }
+
+            .source-name {
+                color: #666;
+                font-size: 12px;
+                font-weight: 500;
+            }
+
+            .rank-num {
+                color: #fff;
+                background: #6b7280;
+                font-size: 10px;
+                font-weight: 700;
+                padding: 2px 6px;
+                border-radius: 10px;
+                min-width: 18px;
+                text-align: center;
+            }
+
+            .rank-num.top { background: #dc2626; }
+            .rank-num.high { background: #ea580c; }
+
+            .time-info {
+                color: #999;
+                font-size: 11px;
+            }
+
+            .count-info {
+                color: #059669;
+                font-size: 11px;
+                font-weight: 500;
+            }
+
+            .news-title {
+                font-size: 15px;
+                line-height: 1.4;
+                color: #1a1a1a;
+                margin: 0;
+            }
+
+            .news-link {
+                color: #2563eb;
+                text-decoration: none;
+            }
+
+            .news-link:hover {
+                text-decoration: underline;
+            }
+
+            .news-link:visited {
+                color: #7c3aed;
+            }
+
+            .new-section {
+                margin-top: 40px;
+                padding-top: 24px;
+                border-top: 2px solid #f0f0f0;
+            }
+
+            .new-section-title {
+                color: #1a1a1a;
+                font-size: 16px;
+                font-weight: 600;
+                margin: 0 0 20px 0;
+            }
+
+            .new-source-group {
+                margin-bottom: 24px;
+            }
+
+            .new-source-title {
+                color: #666;
+                font-size: 13px;
+                font-weight: 500;
+                margin: 0 0 12px 0;
+                padding-bottom: 6px;
+                border-bottom: 1px solid #f5f5f5;
+            }
+
+            .new-item {
+                display: flex;
+                align-items: center;
+                gap: 12px;
+                padding: 8px 0;
+                border-bottom: 1px solid #f9f9f9;
+            }
+
+            .new-item:last-child {
+                border-bottom: none;
+            }
+
+            .new-item-number {
+                color: #999;
+                font-size: 12px;
+                font-weight: 600;
+                min-width: 18px;
+                text-align: center;
+                flex-shrink: 0;
+                background: #f8f9fa;
+                border-radius: 50%;
+                width: 20px;
+                height: 20px;
+                display: flex;
+                align-items: center;
+                justify-content: center;
+            }
+
+            .new-item-rank {
+                color: #fff;
+                background: #6b7280;
+                font-size: 10px;
+                font-weight: 700;
+                padding: 3px 6px;
+                border-radius: 8px;
+                min-width: 20px;
+                text-align: center;
+                flex-shrink: 0;
+            }
+
+            .new-item-rank.top { background: #dc2626; }
+            .new-item-rank.high { background: #ea580c; }
+
+            .new-item-content {
+                flex: 1;
+                min-width: 0;
+            }
+
+            .new-item-title {
+                font-size: 14px;
+                line-height: 1.4;
+                color: #1a1a1a;
+                margin: 0;
+            }
+
+            .error-section {
+                background: #fef2f2;
+                border: 1px solid #fecaca;
+                border-radius: 8px;
+                padding: 16px;
+                margin-bottom: 24px;
+            }
+
+            .error-title {
+                color: #dc2626;
+                font-size: 14px;
+                font-weight: 600;
+                margin: 0 0 8px 0;
+            }
+
+            .error-list {
+                list-style: none;
+                padding: 0;
+                margin: 0;
+            }
+
+            .error-item {
+                color: #991b1b;
+                font-size: 13px;
+                padding: 2px 0;
+                font-family: 'SF Mono', Consolas, monospace;
+            }
+
+            @media (max-width: 480px) {
+                body { padding: 12px; }
+                .header { padding: 24px 20px; }
+                .content { padding: 20px; }
+                .header-info { grid-template-columns: 1fr; gap: 12px; }
+                .news-header { gap: 6px; }
+                .news-content { padding-right: 45px; }
+                .news-item { gap: 8px; }
+                .new-item { gap: 8px; }
+                .news-number { width: 20px; height: 20px; font-size: 12px; }
+            }
+        </style>
+    </head>
+    <body>
+        <div class="container">
+            <div class="header">
+                <div class="header-title">热点新闻分析</div>
+                <div class="header-info">
+                    <div class="info-item">
+                        <span class="info-label">报告类型</span>
+                        <span class="info-value">实时分析</span>
+                    </div>
+                    <div class="info-item">
+                        <span class="info-label">新闻总数</span>
+                        <span class="info-value">84 条</span>
+                    </div>
+                    <div class="info-item">
+                        <span class="info-label">热点新闻</span>
+                        <span class="info-value">43 条</span>
+                    </div>
+                    <div class="info-item">
+                        <span class="info-label">生成时间</span>
+                        <span class="info-value">03-26 04:38</span>
+                    </div>
+                </div>
+            </div>
+
+            <div class="content">
+                <div class="word-group">
+                    <div class="word-header">
+                        <div class="word-info">
+                            <div class="word-name">小米 小米汽车 SU7 YU7 雷军 REDMI 红米 卢伟冰 米家 澎湃OS 小爱 酷态科</div>
+                            <div class="word-count warm">8 条</div>
+                        </div>
+                        <div class="word-index">1/9</div>
+                    </div>
+                    <div class="news-item new">
+                        <div class="news-number">1</div>
+                        <div class="news-content">
+                            <div class="news-header">
+                                <span class="source-name">酷安</span><span class="rank-num top">3</span><span class="time-info">04时38分</span>
+                            </div>
+                            <div class="news-title"><a href="https://www.coolapk.com/feed/70884141" target="_blank" class="news-link">首发「免验证」小米电脑管家支持Windows超级岛！！！安装V5.8.0.14版本后支持通过鼠标拖拽文件到Windows超级岛快速分享到附近的设备上</a>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="news-item new">
+                        <div class="news-number">2</div>
+                        <div class="news-content">
+                            <div class="news-header">
+                                <span class="source-name">IT之家</span><span class="rank-num ">8</span><span class="time-info">04时38分</span>
+                            </div>
+                            <div class="news-title"><a href="https://www.ithome.com/0/932/705.htm" target="_blank" class="news-link">小米汽车回应试驾新一代 SU7 和前代动力感受不同，称首批新车前 300km 属「新手保护期」动力受限</a>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="news-item new">
+                        <div class="news-number">3</div>
+                        <div class="news-content">
+                            <div class="news-header">
+                                <span class="source-name">36氪</span><span class="rank-num ">8</span><span class="time-info">04时38分</span>
+                            </div>
+                            <div class="news-title"><a href="https://www.36kr.com/newsflashes/3738338124234759" target="_blank" class="news-link">金山云：雷军因其他工作安排辞任非执行董事</a>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="news-item new">
+                        <div class="news-number">4</div>
+                        <div class="news-content">
+                            <div class="news-header">
+                                <span class="source-name">酷安</span><span class="rank-num ">9</span><span class="time-info">04时38分</span>
+                            </div>
+                            <div class="news-title"><a href="https://www.coolapk.com/feed/70880292" target="_blank" class="news-link">前一段时间，已经说了，小米这次不会涨价，小米还是有社会担当的，雷军曾公开说过“小米手机硬件整体净利润不超过5%”，目前小米手机业务是小米赚钱能力最差的，2025年手机利润只有不到37亿，整体算下来平均每台不到23元[捂脸]，所以说小米对手机来看，是AI和人车家全生态的重要入口，根本不赚钱，目前小米是把汽车、机器人、AI等创新业务划为一类挺好的，未来就是靠这些业务来赚钱了[强] #HyperOS3# #红米k90promax# #小米17Ultra#</a>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="news-item new">
+                        <div class="news-number">5</div>
+                        <div class="news-content">
+                            <div class="news-header">
+                                <span class="source-name">酷安</span><span class="rank-num ">14</span><span class="time-info">04时38分</span>
+                            </div>
+                            <div class="news-title"><a href="https://www.coolapk.com/feed/70887325" target="_blank" class="news-link">242万，热度那么高销量肯定很好吧[笑眼]。还有，热榜怎么都是叫promax的。#红米k90promax# #华为畅享90ProMax# #小米17ProMax#</a>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="news-item new">
+                        <div class="news-number">6</div>
+                        <div class="news-content">
+                            <div class="news-header">
+                                <span class="source-name">酷安</span><span class="rank-num ">16</span>
+                            </div>
+                            <div class="news-title"><a href="https://www.coolapk.com/feed/70869320" target="_blank" class="news-link">#小米电脑管家# #HyperOS3# 太强了，最新版小米电脑管家 5.8.0.14 可以远程文件管理，登录同账号的小米手机可以访问硬盘文件[喵喵]。</a>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="news-item new">
+                        <div class="news-number">7</div>
+                        <div class="news-content">
+                            <div class="news-header">
+                                <span class="source-name">IT之家</span><span class="rank-num ">23</span><span class="time-info">04时38分</span>
+                            </div>
+                            <div class="news-title"><a href="https://www.ithome.com/0/932/687.htm" target="_blank" class="news-link">金山云：雷军因其他工作安排辞任非执行董事</a>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="news-item new">
+                        <div class="news-number">8</div>
+                        <div class="news-content">
+                            <div class="news-header">
+                                <span class="source-name">IT之家</span><span class="rank-num ">29</span><span class="time-info">04时38分</span>
+                            </div>
+                            <div class="news-title"><a href="https://www.ithome.com/0/932/680.htm" target="_blank" class="news-link">小米官宣将对 HyperOS 1 及 MIUI 设备「地震预警服务」技术升级，今年 Q2 陆续完成</a>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <div class="word-group">
+                    <div class="word-header">
+                        <div class="word-info">
+                            <div class="word-name">苹果 微软 谷歌 Google 特斯拉 英伟达 英特尔 AMD Intel 三星 NVIDIA Youtube Spotify</div>
+                            <div class="word-count warm">7 条</div>
+                        </div>
+                        <div class="word-index">2/9</div>
+                    </div>
+                    <div class="news-item new">
+                        <div class="news-number">1</div>
+                        <div class="news-content">
+                            <div class="news-header">
+                                <span class="source-name">36氪</span><span class="rank-num top">3</span><span class="time-info">04时38分</span>
+                            </div>
+                            <div class="news-title"><a href="https://www.36kr.com/newsflashes/3738356062568707" target="_blank" class="news-link">美股大型科技股盘前普涨，英特尔涨超3%</a>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="news-item new">
+                        <div class="news-number">2</div>
+                        <div class="news-content">
+                            <div class="news-header">
+                                <span class="source-name">36氪</span><span class="rank-num high">4</span><span class="time-info">04时38分</span>
+                            </div>
+                            <div class="news-title"><a href="https://www.36kr.com/newsflashes/3738347506057481" target="_blank" class="news-link">谷歌在印度打击诈骗，为经验证的投资应用加注标签</a>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="news-item new">
+                        <div class="news-number">3</div>
+                        <div class="news-content">
+                            <div class="news-header">
+                                <span class="source-name">IT之家</span><span class="rank-num ">11</span><span class="time-info">04时38分</span>
+                            </div>
+                            <div class="news-title"><a href="https://www.ithome.com/0/932/702.htm" target="_blank" class="news-link">英特尔发布基于第三代酷睿 Ultra 处理器 vPro 平台，锐炫 Pro B70 / B65 专业显卡登场</a>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="news-item new">
+                        <div class="news-number">4</div>
+                        <div class="news-content">
+                            <div class="news-header">
+                                <span class="source-name">IT之家</span><span class="rank-num ">12</span><span class="time-info">04时38分</span>
+                            </div>
+                            <div class="news-title"><a href="https://www.ithome.com/0/932/701.htm" target="_blank" class="news-link">苹果 macOS 26.4 新增“慢速充电器”提示，提醒用户使用更大功率充电器</a>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="news-item new">
+                        <div class="news-number">5</div>
+                        <div class="news-content">
+                            <div class="news-header">
+                                <span class="source-name">IT之家</span><span class="rank-num ">13</span><span class="time-info">04时38分</span>
+                            </div>
+                            <div class="news-title"><a href="https://www.ithome.com/0/932/699.htm" target="_blank" class="news-link">苹果 iOS 26.4 在英国引入强制年龄验证，数百万 iPhone 用户需证明已满 18 岁</a>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="news-item new">
+                        <div class="news-number">6</div>
+                        <div class="news-content">
+                            <div class="news-header">
+                                <span class="source-name">IT之家</span><span class="rank-num ">17</span><span class="time-info">04时38分</span>
+                            </div>
+                            <div class="news-title"><a href="https://www.ithome.com/0/932/694.htm" target="_blank" class="news-link">苹果 AirPods Max 2 耳机已接受订购，4 月 1 日发货</a>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="news-item new">
+                        <div class="news-number">7</div>
+                        <div class="news-content">
+                            <div class="news-header">
+                                <span class="source-name">IT之家</span><span class="rank-num ">24</span><span class="time-info">04时38分</span>
+                            </div>
+                            <div class="news-title"><a href="https://www.ithome.com/0/932/686.htm" target="_blank" class="news-link">三星 Galaxy A57 5G 手机发布：IP68 级防尘防水 + 6 次 OS 升级，3299 元起</a>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <div class="word-group">
+                    <div class="word-header">
+                        <div class="word-info">
+                            <div class="word-name">华为 余承东 鸿蒙 Mate Pura nova</div>
+                            <div class="word-count warm">7 条</div>
+                        </div>
+                        <div class="word-index">3/9</div>
+                    </div>
+                    <div class="news-item new">
+                        <div class="news-number">1</div>
+                        <div class="news-content">
+                            <div class="news-header">
+                                <span class="source-name">IT之家</span><span class="rank-num top">1</span><span class="time-info">04时38分</span>
+                            </div>
+                            <div class="news-title"><a href="https://www.ithome.com/0/932/712.htm" target="_blank" class="news-link">华为智能门锁 M2“悄悄”上市：AI 指纹解锁 + 4 年维保，国补价 679.15 元</a>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="news-item new">
+                        <div class="news-number">2</div>
+                        <div class="news-content">
+                            <div class="news-header">
+                                <span class="source-name">IT之家</span><span class="rank-num top">3</span><span class="time-info">04时38分</span>
+                            </div>
+                            <div class="news-title"><a href="https://www.ithome.com/0/932/710.htm" target="_blank" class="news-link">华为鸿蒙手机“龙虾”小艺 Claw 开启预约：适配 HarmonyOS 6，支持手机、平板设备</a>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="news-item new">
+                        <div class="news-number">3</div>
+                        <div class="news-content">
+                            <div class="news-header">
+                                <span class="source-name">酷安</span><span class="rank-num ">12</span><span class="time-info">04时38分</span>
+                            </div>
+                            <div class="news-title"><a href="https://www.coolapk.com/feed/70862802" target="_blank" class="news-link">这机子等618，降到1400以内，我去，无敌了。。。 #鸿蒙6#</a>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="news-item new">
+                        <div class="news-number">4</div>
+                        <div class="news-content">
+                            <div class="news-header">
+                                <span class="source-name">IT之家</span><span class="rank-num ">15</span><span class="time-info">04时38分</span>
+                            </div>
+                            <div class="news-title"><a href="https://www.ithome.com/0/932/696.htm" target="_blank" class="news-link">华为天气 15.0.14.300 版本官宣上线，新增降水、台风、温度、风力自研天气地图</a>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="news-item new">
+                        <div class="news-number">5</div>
+                        <div class="news-content">
+                            <div class="news-header">
+                                <span class="source-name">抖音</span><span class="rank-num ">26</span><span class="time-info">04时38分</span>
+                            </div>
+                            <div class="news-title"><a href="https://www.douyin.com/hot/2442660" target="_blank" class="news-link">华为千元新机怎么选</a>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="news-item new">
+                        <div class="news-number">6</div>
+                        <div class="news-content">
+                            <div class="news-header">
+                                <span class="source-name">IT之家</span><span class="rank-num ">28</span><span class="time-info">04时38分</span>
+                            </div>
+                            <div class="news-title"><a href="https://www.ithome.com/0/932/681.htm" target="_blank" class="news-link">全新奥迪 A6L 正式上市：搭载华为乾崑智驾，起售价 32.29 万元</a>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="news-item new">
+                        <div class="news-number">7</div>
+                        <div class="news-content">
+                            <div class="news-header">
+                                <span class="source-name">IT之家</span><span class="rank-num ">30</span><span class="time-info">04时38分</span>
+                            </div>
+                            <div class="news-title"><a href="https://www.ithome.com/0/932/679.htm" target="_blank" class="news-link">一汽奥迪 A6L e-tron 开启预售：搭载华为乾崑智驾，预售 31.3 万元起</a>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <div class="word-group">
+                    <div class="word-header">
+                        <div class="word-info">
+                            <div class="word-name">OPPO vivo iQOO realme 一加 ColorOS OriginOS OnePlus 欢太</div>
+                            <div class="word-count warm">5 条</div>
+                        </div>
+                        <div class="word-index">4/9</div>
+                    </div>
+                    <div class="news-item new">
+                        <div class="news-number">1</div>
+                        <div class="news-content">
+                            <div class="news-header">
+                                <span class="source-name">IT之家</span><span class="rank-num high">4</span><span class="time-info">04时38分</span>
+                            </div>
+                            <div class="news-title"><a href="https://www.ithome.com/0/932/709.htm" target="_blank" class="news-link">realme 真我 GT8 Pro 手机适配 Android 17 开发者预览版教程说明发布</a>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="news-item new">
+                        <div class="news-number">2</div>
+                        <div class="news-content">
+                            <div class="news-header">
+                                <span class="source-name">酷安</span><span class="rank-num high">5</span><span class="time-info">04时38分</span>
+                            </div>
+                            <div class="news-title"><a href="https://www.coolapk.com/feed/70873549" target="_blank" class="news-link">#一加15T开箱有礼# 福利加码！</a>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="news-item new">
+                        <div class="news-number">3</div>
+                        <div class="news-content">
+                            <div class="news-header">
+                                <span class="source-name">酷安</span><span class="rank-num ">10</span><span class="time-info">04时38分</span>
+                            </div>
+                            <div class="news-title"><a href="https://www.coolapk.com/feed/70864029" target="_blank" class="news-link">『一加 15T 发布：4299 元起 / 国补 3799 元起』</a>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="news-item new">
+                        <div class="news-number">4</div>
+                        <div class="news-content">
+                            <div class="news-header">
+                                <span class="source-name">IT之家</span><span class="rank-num ">21</span><span class="time-info">04时38分</span>
+                            </div>
+                            <div class="news-title"><a href="https://www.ithome.com/0/932/689.htm" target="_blank" class="news-link">真我商城将于 4 月 25 日停止运营，业务全面整合至 OPPO 体系</a>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="news-item new">
+                        <div class="news-number">5</div>
+                        <div class="news-content">
+                            <div class="news-header">
+                                <span class="source-name">IT之家</span><span class="rank-num ">25</span><span class="time-info">04时38分</span>
+                            </div>
+                            <div class="news-title"><a href="https://www.ithome.com/0/932/685.htm" target="_blank" class="news-link">消息称 iQOO Z11 系列手机将提供 8GB+256GB 规格版本</a>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <div class="word-group">
+                    <div class="word-header">
+                        <div class="word-info">
+                            <div class="word-name">美团 滴滴 京东 微博 腾讯 微信 QQ 百度 阿里 支付宝 淘宝 小红书 高德 哔哩哔哩 字节 抖音 WPS 钉钉 快手</div>
+                            <div class="word-count ">4 条</div>
+                        </div>
+                        <div class="word-index">5/9</div>
+                    </div>
+                    <div class="news-item new">
+                        <div class="news-number">1</div>
+                        <div class="news-content">
+                            <div class="news-header">
+                                <span class="source-name">36氪</span><span class="rank-num top">2</span><span class="time-info">04时38分</span>
+                            </div>
+                            <div class="news-title"><a href="https://www.36kr.com/newsflashes/3738361239977985" target="_blank" class="news-link">热门中概股美股盘前集体走强，阿里巴巴涨超3%</a>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="news-item new">
+                        <div class="news-number">2</div>
+                        <div class="news-content">
+                            <div class="news-header">
+                                <span class="source-name">36氪</span><span class="rank-num ">11</span><span class="time-info">04时38分</span>
+                            </div>
+                            <div class="news-title"><a href="https://www.36kr.com/newsflashes/3738321622335744" target="_blank" class="news-link">快手：预计2026年Capex约260亿元，将继续加码AI算力与基础设施投入</a>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="news-item new">
+                        <div class="news-number">3</div>
+                        <div class="news-content">
+                            <div class="news-header">
+                                <span class="source-name">IT之家</span><span class="rank-num ">20</span><span class="time-info">04时38分</span>
+                            </div>
+                            <div class="news-title"><a href="https://www.ithome.com/0/932/691.htm" target="_blank" class="news-link">快手 CEO 程一笑：对可灵 AI 今年收入实现同比翻倍以上增长保持较强信心</a>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="news-item new">
+                        <div class="news-number">4</div>
+                        <div class="news-content">
+                            <div class="news-header">
+                                <span class="source-name">IT之家</span><span class="rank-num ">27</span><span class="time-info">04时38分</span>
+                            </div>
+                            <div class="news-title"><a href="https://www.ithome.com/0/932/682.htm" target="_blank" class="news-link">斯里兰卡国家支付网络 LankaPay 正式接入微信支付，中国游客可直接扫码消费</a>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <div class="word-group">
+                    <div class="word-header">
+                        <div class="word-info">
+                            <div class="word-name">手机 电脑 平板 Pad 笔记本</div>
+                            <div class="word-count ">4 条</div>
+                        </div>
+                        <div class="word-index">6/9</div>
+                    </div>
+                    <div class="news-item new">
+                        <div class="news-number">1</div>
+                        <div class="news-content">
+                            <div class="news-header">
+                                <span class="source-name">酷安</span><span class="rank-num top">2</span><span class="time-info">04时38分</span>
+                            </div>
+                            <div class="news-title"><a href="https://www.coolapk.com/feed/70849683" target="_blank" class="news-link">把K20 Pro改造成笔记本电脑了</a>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="news-item new">
+                        <div class="news-number">2</div>
+                        <div class="news-content">
+                            <div class="news-header">
+                                <span class="source-name">IT之家</span><span class="rank-num high">5</span><span class="time-info">04时38分</span>
+                            </div>
+                            <div class="news-title"><a href="https://www.ithome.com/0/932/708.htm" target="_blank" class="news-link">Bigme 大我 HiBreak Plus 彩墨屏手写手机亮相：MTK6765 芯片、安卓 14 系统，预售价 1699 元</a>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="news-item new">
+                        <div class="news-number">3</div>
+                        <div class="news-content">
+                            <div class="news-header">
+                                <span class="source-name">酷安</span><span class="rank-num ">6</span><span class="time-info">04时38分</span>
+                            </div>
+                            <div class="news-title"><a href="https://www.coolapk.com/feed/70875649" target="_blank" class="news-link">不知道为什么很多人对这个手机恶意这么大，原来本来就是韭菜机的设定现在正常了还不好兴了，本来就面向中老年人，有一块好的屏幕，外加品牌，1600块很可以了，谁也不希望家长的屏幕不护眼，电池不耐用，再说谁不希望中国的品牌越来越好了</a>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="news-item new">
+                        <div class="news-number">4</div>
+                        <div class="news-content">
+                            <div class="news-header">
+                                <span class="source-name">酷安</span><span class="rank-num ">15</span><span class="time-info">04时38分</span>
+                            </div>
+                            <div class="news-title"><a href="https://www.coolapk.com/feed/70875560" target="_blank" class="news-link">我发现很多人解锁后喜欢刷很多模块，在那边养蛊，你想要流畅省电必然是官调最好，特别是8e之后的芯片，根本没必要去动调度刷一些乱七八糟的线程模块。你只是需要刷伪装温控的模块，将官方温控的阈值提高一点（如@苏疫杆菌 的模块或者嘟嘟最新版温控）。再通过西米露禁用云控下发（如joyose analytics html查看器），然后将上述这些软件的系统数据清除，重启手机。还有不要刷乱七八糟的隐藏模块，其实只要ksu刷个zn就行了，99.9%的应用都能正常用，如果是挂✔当我没说。如今root，玩玩lsp模块个性化去广告即可，不要缘木求鱼。（个人拙见，仅供参考） #HyperOS3#</a>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <div class="word-group">
+                    <div class="word-header">
+                        <div class="word-info">
+                            <div class="word-name">AI 人工智能 Deepseek OpenAI 豆包 Kimi Agent GPT</div>
+                            <div class="word-count ">4 条</div>
+                        </div>
+                        <div class="word-index">7/9</div>
+                    </div>
+                    <div class="news-item new">
+                        <div class="news-number">1</div>
+                        <div class="news-content">
+                            <div class="news-header">
+                                <span class="source-name">IT之家</span><span class="rank-num ">6</span><span class="time-info">04时38分</span>
+                            </div>
+                            <div class="news-title"><a href="https://www.ithome.com/0/932/707.htm" target="_blank" class="news-link">特朗普将任命黄仁勋、扎克伯格等为科技顾问，为 AI 政策提供建议</a>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="news-item new">
+                        <div class="news-number">2</div>
+                        <div class="news-content">
+                            <div class="news-header">
+                                <span class="source-name">IT之家</span><span class="rank-num ">16</span><span class="time-info">04时38分</span>
+                            </div>
+                            <div class="news-title"><a href="https://www.ithome.com/0/932/695.htm" target="_blank" class="news-link">OpenAI 突然宣布停止视频生成服务 Sora，消息称迪士尼“深感震惊”</a>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="news-item new">
+                        <div class="news-number">3</div>
+                        <div class="news-content">
+                            <div class="news-header">
+                                <span class="source-name">IT之家</span><span class="rank-num ">18</span><span class="time-info">04时38分</span>
+                            </div>
+                            <div class="news-title"><a href="https://www.ithome.com/0/932/693.htm" target="_blank" class="news-link">豪赌 AI！Meta 首次为高管推出股票期权激励计划，与市值涨六倍挂钩</a>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="news-item new">
+                        <div class="news-number">4</div>
+                        <div class="news-content">
+                            <div class="news-header">
+                                <span class="source-name">36氪</span><span class="rank-num ">19</span><span class="time-info">04时38分</span>
+                            </div>
+                            <div class="news-title"><a href="https://www.36kr.com/newsflashes/3738283978080517" target="_blank" class="news-link">程一笑：截至26年1月可灵AI ARR已超3亿美元，预计今年收入翻倍以上增长</a>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <div class="word-group">
+                    <div class="word-header">
+                        <div class="word-info">
+                            <div class="word-name">苹果 iPhone iOS Mac iPad 库克</div>
+                            <div class="word-count ">3 条</div>
+                        </div>
+                        <div class="word-index">8/9</div>
+                    </div>
+                    <div class="news-item new">
+                        <div class="news-number">1</div>
+                        <div class="news-content">
+                            <div class="news-header">
+                                <span class="source-name">酷安</span><span class="rank-num ">13</span><span class="time-info">04时38分</span>
+                            </div>
+                            <div class="news-title"><a href="https://www.coolapk.com/feed/70887718" target="_blank" class="news-link">兄弟们，下班了，这都是啥[doge][doge]#iPhone17ProMax# #荣耀WINRT# #一加15T#</a>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="news-item new">
+                        <div class="news-number">2</div>
+                        <div class="news-content">
+                            <div class="news-header">
+                                <span class="source-name">酷安</span><span class="rank-num ">17</span><span class="time-info">04时38分</span>
+                            </div>
+                            <div class="news-title"><a href="https://www.coolapk.com/feed/70884338" target="_blank" class="news-link">有没有要买靓机的[受虐滑稽][受虐滑稽][受虐滑稽] ，刚刚入职了一个批发工作机的公司，几百台里面挑几个靓机出来卖。#iPhoneSE3# #iPhone8# #酷工作#</a>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="news-item new">
+                        <div class="news-number">3</div>
+                        <div class="news-content">
+                            <div class="news-header">
+                                <span class="source-name">酷安</span><span class="rank-num ">19</span><span class="time-info">04时38分</span>
+                            </div>
+                            <div class="news-title"><a href="https://www.coolapk.com/feed/70881965" target="_blank" class="news-link">iOS版酷安即将迎来的重大更新，字体调节和草稿箱，绝对是大家需要的。</a>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <div class="word-group">
+                    <div class="word-header">
+                        <div class="word-info">
+                            <div class="word-name">小鹏 理想 蔚来 极氪 问界 享界 尊界 智界 比亚迪 吉利 长城汽车</div>
+                            <div class="word-count ">1 条</div>
+                        </div>
+                        <div class="word-index">9/9</div>
+                    </div>
+                    <div class="news-item new">
+                        <div class="news-number">1</div>
+                        <div class="news-content">
+                            <div class="news-header">
+                                <span class="source-name">IT之家</span><span class="rank-num ">7</span><span class="time-info">04时38分</span>
+                            </div>
+                            <div class="news-title"><a href="https://www.ithome.com/0/932/706.htm" target="_blank" class="news-link">全新蔚来 ES9 双拼色特别版开启无伪装路测，新车技术发布会 4 月 9 日举行</a>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </body>
+    </html>
+    
