@@ -181,8 +181,8 @@ def show_status():
                     with open(file_path, 'r') as f:
                         crontab_content = f.read().strip()
                         print(f"         内容: {crontab_content}")
-                except:
-                    pass
+                except OSError as e:
+                    print(f"         ❌ 无法读取crontab: {e}")
         else:
             print(f"    ❌ {description}: 不存在")
 
