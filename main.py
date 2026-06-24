@@ -3613,7 +3613,25 @@ def generate_static_api_files(analyzer: "NewsAnalyzer"):
 
 # --- Flask App (如果已安装) ---
 if FLASK_AVAILABLE:
+    from flask import request
+
     app = Flask(__name__)
+
+    # Simple in-memory rate limiter: max 6 requests per IP per minute
+    _rate_limit_store: Dict[str, List[float]] = {}
+    _RATE_LIMIT_MAX_REQUESTS = 6
+    _RATE_LIMIT_WINDOW_SECONDS = 60
+
+    def _is_rate_limited() -> bool:
+        client_ip = request.remote_addr or "unknown"
+        now = time.time()
+        timestamps = _rate_limit_store.get(client_ip, [])
+        timestamps = [t for t in timestamps if now - t < _RATE_LIMIT_WINDOW_SECONDS]
+        _rate_limit_store[client_ip] = timestamps
+        if len(timestamps) >= _RATE_LIMIT_MAX_REQUESTS:
+            return True
+        timestamps.append(now)
+        return False
 
     @app.route('/api/trends.json')
     @app.route('/api/trends')
@@ -3622,6 +3640,8 @@ if FLASK_AVAILABLE:
         API端点，实时生成并返回趋势数据。
         注意：这是一个耗时操作，每次请求都会重新爬取、分析和渲染图片。
         """
+        if _is_rate_limited():
+            return jsonify({"error": "请求过于频繁，请稍后再试"}), 429
         try:
             analyzer = NewsAnalyzer()
             # 运行完整的静态文件生成流程
@@ -3635,12 +3655,13 @@ if FLASK_AVAILABLE:
                 return jsonify({"error": "API文件生成失败"}), 500
         except Exception as e:
             print(f"API请求处理失败: {e}")
-            return jsonify({"error": "内部服务器错误", "message": str(e)}), 500
+            return jsonify({"error": "内部服务器错误"}), 500
 
     @app.route('/img/<path:filename>')
     def serve_image(filename):
         """提供图片文件的API端点"""
-        return send_from_directory('img', filename)
+        img_dir = os.path.join(os.path.abspath(os.path.dirname(__file__)), 'img')
+        return send_from_directory(img_dir, filename)
 
 
 def main():
