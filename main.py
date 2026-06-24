@@ -1,6 +1,7 @@
 # coding=utf-8
 
 import json
+import logging
 import os
 import random
 import re
@@ -33,6 +34,8 @@ except ImportError:
 
 
 VERSION = "2.2.0"
+
+logger = logging.getLogger(__name__)
 
 
 # === 配置管理 ===
@@ -171,11 +174,13 @@ def generate_image_from_html(html_file_path: str, output_image_path: str):
                 element.screenshot(path=output_image_path)
                 print(f"图片成功保存至: {output_image_path}")
             else:
-                print("错误: 在HTML报告中未找到 '.container' 元素，无法截图。")
+                logger.error("在HTML报告中未找到 '.container' 元素，无法截图。")
             browser.close()
     except Exception as e:
-        print(f"生成图片时发生错误: {e}")
-        print("请确保 Playwright 已正确安装 ('pip install playwright' 和 'playwright install')。")
+        logger.error(
+            f"生成图片时发生错误: {e}. "
+            "请确保 Playwright 已正确安装 ('pip install playwright' 和 'playwright install')。"
+        )
 
 
 # === 工具函数 ===
@@ -247,7 +252,8 @@ def check_version_update(
                 if len(parts) != 3:
                     raise ValueError("版本号格式不正确")
                 return int(parts[0]), int(parts[1]), int(parts[2])
-            except:
+            except (ValueError, AttributeError) as e:
+                logger.warning(f"版本号解析失败 '{version_str}': {e}")
                 return 0, 0, 0
 
         current_tuple = parse_version(current_version)
@@ -256,8 +262,11 @@ def check_version_update(
         need_update = current_tuple < remote_tuple
         return need_update, remote_version if need_update else None
 
+    except requests.RequestException as e:
+        logger.warning(f"版本检查网络请求失败: {e}")
+        return False, None
     except Exception as e:
-        print(f"版本检查失败: {e}")
+        logger.warning(f"版本检查失败: {e}")
         return False, None
 
 
@@ -319,8 +328,8 @@ class PushRecordManager:
                 if (current_time - file_date).days > retention_days:
                     record_file.unlink()
                     print(f"清理过期推送记录: {record_file.name}")
-            except Exception as e:
-                print(f"清理记录文件失败 {record_file}: {e}")
+            except (ValueError, OSError) as e:
+                logger.warning(f"清理记录文件失败 {record_file}: {e}")
 
     def has_pushed_today(self) -> bool:
         """检查今天是否已经推送过"""
@@ -333,8 +342,8 @@ class PushRecordManager:
             with open(record_file, "r", encoding="utf-8") as f:
                 record = json.load(f)
             return record.get("pushed", False)
-        except Exception as e:
-            print(f"读取推送记录失败: {e}")
+        except (json.JSONDecodeError, OSError) as e:
+            logger.warning(f"读取推送记录失败 {record_file}: {e}")
             return False
 
     def record_push(self, report_type: str):
@@ -352,8 +361,9 @@ class PushRecordManager:
             with open(record_file, "w", encoding="utf-8") as f:
                 json.dump(record, f, ensure_ascii=False, indent=2)
             print(f"推送记录已保存: {report_type} at {now.strftime('%H:%M:%S')}")
-        except Exception as e:
-            print(f"保存推送记录失败: {e}")
+        except OSError as e:
+            logger.error(f"保存推送记录失败 {record_file}: {e}")
+            raise
 
     def is_in_time_range(self, start_time: str, end_time: str) -> bool:
         """检查当前时间是否在指定时间范围内"""
@@ -416,16 +426,19 @@ class DataFetcher:
                 print(f"获取 {id_value} 成功（{status_info}）")
                 return data_text, id_value, alias
 
-            except Exception as e:
+            except (requests.RequestException, json.JSONDecodeError, ValueError) as e:
                 retries += 1
                 if retries <= max_retries:
                     base_wait = random.uniform(min_retry_wait, max_retry_wait)
                     additional_wait = (retries - 1) * random.uniform(1, 2)
                     wait_time = base_wait + additional_wait
-                    print(f"请求 {id_value} 失败: {e}. {wait_time:.2f}秒后重试...")
+                    logger.warning(
+                        f"请求 {id_value} 失败 (尝试 {retries}/{max_retries}): {e}. "
+                        f"{wait_time:.2f}秒后重试..."
+                    )
                     time.sleep(wait_time)
                 else:
-                    print(f"请求 {id_value} 失败: {e}")
+                    logger.error(f"请求 {id_value} 最终失败 (已重试 {max_retries} 次): {e}")
                     return None, id_value, alias
         return None, id_value, alias
 
@@ -466,11 +479,11 @@ class DataFetcher:
                                 "url": url,
                                 "mobileUrl": mobile_url,
                             }
-                except json.JSONDecodeError:
-                    print(f"解析 {id_value} 响应失败")
+                except json.JSONDecodeError as e:
+                    logger.warning(f"解析 {id_value} 响应失败: {e}")
                     failed_ids.append(id_value)
-                except Exception as e:
-                    print(f"处理 {id_value} 数据出错: {e}")
+                except (KeyError, TypeError) as e:
+                    logger.warning(f"处理 {id_value} 数据结构异常: {e}")
                     failed_ids.append(id_value)
             else:
                 failed_ids.append(id_value)
@@ -653,8 +666,8 @@ def parse_file_titles(file_path: Path) -> Tuple[Dict, Dict]:
                             "mobileUrl": mobile_url,
                         }
 
-                    except Exception as e:
-                        print(f"解析标题行出错: {line}, 错误: {e}")
+                    except (ValueError, IndexError) as e:
+                        logger.warning(f"解析标题行出错: {line}, 错误: {e}")
 
     return titles_by_id, id_to_name
 
@@ -2771,10 +2784,16 @@ def send_to_feishu(
             print(f"飞书通知发送成功 [{report_type}]")
             return True
         else:
-            print(f"飞书通知发送失败 [{report_type}]，状态码：{response.status_code}")
+            logger.error(
+                f"飞书通知发送失败 [{report_type}]，"
+                f"状态码：{response.status_code}，响应：{response.text[:200]}"
+            )
             return False
+    except requests.RequestException as e:
+        logger.error(f"飞书通知发送网络错误 [{report_type}]：{e}")
+        return False
     except Exception as e:
-        print(f"飞书通知发送出错 [{report_type}]：{e}")
+        logger.error(f"飞书通知发送出错 [{report_type}]：{e}")
         return False
 
 
@@ -2813,13 +2832,22 @@ def send_to_dingtalk(
                 print(f"钉钉通知发送成功 [{report_type}]")
                 return True
             else:
-                print(f"钉钉通知发送失败 [{report_type}]，错误：{result.get('errmsg')}")
+                logger.error(
+                    f"钉钉通知发送失败 [{report_type}]，"
+                    f"错误码：{result.get('errcode')}，错误信息：{result.get('errmsg')}"
+                )
                 return False
         else:
-            print(f"钉钉通知发送失败 [{report_type}]，状态码：{response.status_code}")
+            logger.error(
+                f"钉钉通知发送失败 [{report_type}]，"
+                f"状态码：{response.status_code}，响应：{response.text[:200]}"
+            )
             return False
+    except requests.RequestException as e:
+        logger.error(f"钉钉通知发送网络错误 [{report_type}]：{e}")
+        return False
     except Exception as e:
-        print(f"钉钉通知发送出错 [{report_type}]：{e}")
+        logger.error(f"钉钉通知发送出错 [{report_type}]：{e}")
         return False
 
 
@@ -2868,17 +2896,22 @@ def send_to_wework(
                     if i < len(batches):
                         time.sleep(CONFIG["BATCH_SEND_INTERVAL"])
                 else:
-                    print(
-                        f"企业微信第 {i}/{len(batches)} 批次发送失败 [{report_type}]，错误：{result.get('errmsg')}"
+                    logger.error(
+                        f"企业微信第 {i}/{len(batches)} 批次发送失败 [{report_type}]，"
+                        f"错误码：{result.get('errcode')}，错误信息：{result.get('errmsg')}"
                     )
                     return False
             else:
-                print(
-                    f"企业微信第 {i}/{len(batches)} 批次发送失败 [{report_type}]，状态码：{response.status_code}"
+                logger.error(
+                    f"企业微信第 {i}/{len(batches)} 批次发送失败 [{report_type}]，"
+                    f"状态码：{response.status_code}，响应：{response.text[:200]}"
                 )
                 return False
+        except requests.RequestException as e:
+            logger.error(f"企业微信第 {i}/{len(batches)} 批次发送网络错误 [{report_type}]：{e}")
+            return False
         except Exception as e:
-            print(f"企业微信第 {i}/{len(batches)} 批次发送出错 [{report_type}]：{e}")
+            logger.error(f"企业微信第 {i}/{len(batches)} 批次发送出错 [{report_type}]：{e}")
             return False
 
     print(f"企业微信所有 {len(batches)} 批次发送完成 [{report_type}]")
@@ -2940,17 +2973,22 @@ def send_to_telegram(
                     if i < len(batches):
                         time.sleep(CONFIG["BATCH_SEND_INTERVAL"])
                 else:
-                    print(
-                        f"Telegram第 {i}/{len(batches)} 批次发送失败 [{report_type}]，错误：{result.get('description')}"
+                    logger.error(
+                        f"Telegram第 {i}/{len(batches)} 批次发送失败 [{report_type}]，"
+                        f"错误码：{result.get('error_code')}，描述：{result.get('description')}"
                     )
                     return False
             else:
-                print(
-                    f"Telegram第 {i}/{len(batches)} 批次发送失败 [{report_type}]，状态码：{response.status_code}"
+                logger.error(
+                    f"Telegram第 {i}/{len(batches)} 批次发送失败 [{report_type}]，"
+                    f"状态码：{response.status_code}，响应：{response.text[:200]}"
                 )
                 return False
+        except requests.RequestException as e:
+            logger.error(f"Telegram第 {i}/{len(batches)} 批次发送网络错误 [{report_type}]：{e}")
+            return False
         except Exception as e:
-            print(f"Telegram第 {i}/{len(batches)} 批次发送出错 [{report_type}]：{e}")
+            logger.error(f"Telegram第 {i}/{len(batches)} 批次发送出错 [{report_type}]：{e}")
             return False
 
     print(f"Telegram所有 {len(batches)} 批次发送完成 [{report_type}]")
@@ -3016,7 +3054,8 @@ class NewsAnalyzer:
                 return True
 
             return False
-        except Exception:
+        except OSError as e:
+            logger.debug(f"Docker环境检测失败，默认为非Docker环境: {e}")
             return False
 
     def _should_open_browser(self) -> bool:
@@ -3049,7 +3088,7 @@ class NewsAnalyzer:
             else:
                 print("版本检查完成，当前为最新版本")
         except Exception as e:
-            print(f"版本检查出错: {e}")
+            logger.warning(f"版本检查出错: {e}")
 
     def _get_mode_strategy(self) -> Dict:
         """获取当前模式的策略配置"""
@@ -3115,8 +3154,14 @@ class NewsAnalyzer:
                 word_groups,
                 filter_words,
             )
+        except FileNotFoundError as e:
+            logger.error(f"数据加载失败，文件不存在: {e}")
+            return None
+        except (json.JSONDecodeError, yaml.YAMLError) as e:
+            logger.error(f"数据加载失败，解析错误: {e}")
+            return None
         except Exception as e:
-            print(f"数据加载失败: {e}")
+            logger.error(f"数据加载失败: {e}", exc_info=True)
             return None
 
     def _prepare_current_title_info(self, results: Dict, time_info: str) -> Dict:
@@ -3632,10 +3677,11 @@ if FLASK_AVAILABLE:
                 with open(api_file, "r", encoding="utf-8") as f:
                     return jsonify(json.load(f))
             else:
+                logger.error("API文件生成失败，文件不存在: api/trends.json")
                 return jsonify({"error": "API文件生成失败"}), 500
         except Exception as e:
-            print(f"API请求处理失败: {e}")
-            return jsonify({"error": "内部服务器错误", "message": str(e)}), 500
+            logger.error(f"API请求处理失败: {e}", exc_info=True)
+            return jsonify({"error": "内部服务器错误"}), 500
 
     @app.route('/img/<path:filename>')
     def serve_image(filename):
@@ -3644,6 +3690,12 @@ if FLASK_AVAILABLE:
 
 
 def main():
+    logging.basicConfig(
+        level=logging.INFO,
+        format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
+        datefmt="%Y-%m-%d %H:%M:%S",
+    )
+
     parser = argparse.ArgumentParser(description="TrendRadar: 新闻热点分析工具。")
     parser.add_argument(
         '--serve-api',
@@ -3678,13 +3730,16 @@ def main():
             analyzer.run()
 
     except FileNotFoundError as e:
+        logger.error(f"配置文件错误: {e}")
         print(f"❌ 配置文件错误: {e}")
         print("\n请确保以下文件存在:")
         print("  • config/config.yaml")
         print("  • config/frequency_words.txt")
         print("\n参考项目文档进行正确配置")
+    except KeyboardInterrupt:
+        print("\n程序被用户中断")
     except Exception as e:
-        print(f"❌ 程序运行错误: {e}")
+        logger.error(f"程序运行错误: {e}", exc_info=True)
         raise
 
 
