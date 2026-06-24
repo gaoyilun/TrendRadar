@@ -98,33 +98,29 @@ def load_config():
     notification = config_data.get("notification", {})
     webhooks = notification.get("webhooks", {})
 
-    config["FEISHU_WEBHOOK_URL"] = os.environ.get(
-        "FEISHU_WEBHOOK_URL", ""
-    ).strip() or webhooks.get("feishu_url", "")
-    config["DINGTALK_WEBHOOK_URL"] = os.environ.get(
-        "DINGTALK_WEBHOOK_URL", ""
-    ).strip() or webhooks.get("dingtalk_url", "")
-    config["WEWORK_WEBHOOK_URL"] = os.environ.get(
-        "WEWORK_WEBHOOK_URL", ""
-    ).strip() or webhooks.get("wework_url", "")
-    config["TELEGRAM_BOT_TOKEN"] = os.environ.get(
-        "TELEGRAM_BOT_TOKEN", ""
-    ).strip() or webhooks.get("telegram_bot_token", "")
-    config["TELEGRAM_CHAT_ID"] = os.environ.get(
-        "TELEGRAM_CHAT_ID", ""
-    ).strip() or webhooks.get("telegram_chat_id", "")
+    # Webhook凭证：环境变量 > 配置文件
+    _WEBHOOK_KEYS = [
+        ("FEISHU_WEBHOOK_URL", "feishu_url"),
+        ("DINGTALK_WEBHOOK_URL", "dingtalk_url"),
+        ("WEWORK_WEBHOOK_URL", "wework_url"),
+        ("TELEGRAM_BOT_TOKEN", "telegram_bot_token"),
+        ("TELEGRAM_CHAT_ID", "telegram_chat_id"),
+    ]
+    for env_key, config_key in _WEBHOOK_KEYS:
+        config[env_key] = os.environ.get(env_key, "").strip() or webhooks.get(config_key, "")
 
     # 输出配置来源信息
+    _WEBHOOK_DISPLAY = [
+        ("FEISHU_WEBHOOK_URL", "飞书"),
+        ("DINGTALK_WEBHOOK_URL", "钉钉"),
+        ("WEWORK_WEBHOOK_URL", "企业微信"),
+    ]
     webhook_sources = []
-    if config["FEISHU_WEBHOOK_URL"]:
-        source = "环境变量" if os.environ.get("FEISHU_WEBHOOK_URL") else "配置文件"
-        webhook_sources.append(f"飞书({source})")
-    if config["DINGTALK_WEBHOOK_URL"]:
-        source = "环境变量" if os.environ.get("DINGTALK_WEBHOOK_URL") else "配置文件"
-        webhook_sources.append(f"钉钉({source})")
-    if config["WEWORK_WEBHOOK_URL"]:
-        source = "环境变量" if os.environ.get("WEWORK_WEBHOOK_URL") else "配置文件"
-        webhook_sources.append(f"企业微信({source})")
+    for env_key, display_name in _WEBHOOK_DISPLAY:
+        if config[env_key]:
+            source = "环境变量" if os.environ.get(env_key) else "配置文件"
+            webhook_sources.append(f"{display_name}({source})")
+
     if config["TELEGRAM_BOT_TOKEN"] and config["TELEGRAM_CHAT_ID"]:
         token_source = (
             "环境变量" if os.environ.get("TELEGRAM_BOT_TOKEN") else "配置文件"
@@ -222,9 +218,7 @@ def check_version_update(
 ) -> Tuple[bool, Optional[str]]:
     """检查版本更新"""
     try:
-        proxies = None
-        if proxy_url:
-            proxies = {"http": proxy_url, "https": proxy_url}
+        proxies = build_proxies(proxy_url)
 
         headers = {
             "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
@@ -285,6 +279,68 @@ def html_escape(text: str) -> str:
         .replace('"', "&quot;")
         .replace("'", "&#x27;")
     )
+
+
+def build_proxies(proxy_url: Optional[str]) -> Optional[Dict[str, str]]:
+    """构建代理字典"""
+    if proxy_url:
+        return {"http": proxy_url, "https": proxy_url}
+    return None
+
+
+def get_empty_mode_text(mode: str) -> str:
+    """根据模式返回空数据提示文案"""
+    _EMPTY_MODE_TEXTS = {
+        "incremental": "增量模式下暂无新增匹配的热点词汇",
+        "current": "当前榜单模式下暂无匹配的热点词汇",
+    }
+    return _EMPTY_MODE_TEXTS.get(mode, "暂无匹配的热点词汇")
+
+
+def get_count_emoji(count: int) -> str:
+    """根据计数返回对应的emoji"""
+    if count >= 10:
+        return "🔥"
+    elif count >= 5:
+        return "📈"
+    return "📌"
+
+
+def filter_data_by_platform_ids(
+        data: Dict, platform_ids: List[str]
+) -> Dict:
+    """按平台ID列表过滤数据字典"""
+    return {
+        source_id: source_data
+        for source_id, source_data in data.items()
+        if source_id in platform_ids
+    }
+
+
+def extract_title_info(
+        title_info: Optional[Dict],
+        source_id: str,
+        title: str,
+        fallback_ranks: List,
+        fallback_url: str,
+        fallback_mobile_url: str,
+) -> Tuple[str, str, int, List, str, str]:
+    """从title_info提取标题的统计信息，带回退值"""
+    if (
+            title_info
+            and source_id in title_info
+            and title in title_info[source_id]
+    ):
+        info = title_info[source_id][title]
+        return (
+            info.get("first_time", ""),
+            info.get("last_time", ""),
+            info.get("count", 1),
+            info["ranks"] if info.get("ranks") else fallback_ranks,
+            info.get("url", fallback_url),
+            info.get("mobileUrl", fallback_mobile_url),
+        )
+    return "", "", 1, fallback_ranks, fallback_url, fallback_mobile_url
 
 
 # === 推送记录管理 ===
@@ -385,9 +441,7 @@ class DataFetcher:
 
         url = f"https://newsnow.busiyi.world/api/s?id={id_value}&latest"
 
-        proxies = None
-        if self.proxy_url:
-            proxies = {"http": self.proxy_url, "https": self.proxy_url}
+        proxies = build_proxies(self.proxy_url)
 
         headers = {
             "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36",
@@ -681,17 +735,8 @@ def read_all_today_titles(
         titles_by_id, file_id_to_name = parse_file_titles(file_path)
 
         if current_platform_ids is not None:
-            filtered_titles_by_id = {}
-            filtered_id_to_name = {}
-
-            for source_id, title_data in titles_by_id.items():
-                if source_id in current_platform_ids:
-                    filtered_titles_by_id[source_id] = title_data
-                    if source_id in file_id_to_name:
-                        filtered_id_to_name[source_id] = file_id_to_name[source_id]
-
-            titles_by_id = filtered_titles_by_id
-            file_id_to_name = filtered_id_to_name
+            titles_by_id = filter_data_by_platform_ids(titles_by_id, current_platform_ids)
+            file_id_to_name = filter_data_by_platform_ids(file_id_to_name, current_platform_ids)
 
         final_id_to_name.update(file_id_to_name)
 
@@ -794,11 +839,7 @@ def detect_latest_new_titles(current_platform_ids: Optional[List[str]] = None) -
 
     # 如果指定了当前平台列表，过滤最新文件数据
     if current_platform_ids is not None:
-        filtered_latest_titles = {}
-        for source_id, title_data in latest_titles.items():
-            if source_id in current_platform_ids:
-                filtered_latest_titles[source_id] = title_data
-        latest_titles = filtered_latest_titles
+        latest_titles = filter_data_by_platform_ids(latest_titles, current_platform_ids)
 
     # 汇总历史标题（按平台过滤）
     historical_titles = {}
@@ -807,11 +848,7 @@ def detect_latest_new_titles(current_platform_ids: Optional[List[str]] = None) -
 
         # 过滤历史数据
         if current_platform_ids is not None:
-            filtered_historical_data = {}
-            for source_id, title_data in historical_data.items():
-                if source_id in current_platform_ids:
-                    filtered_historical_data[source_id] = title_data
-            historical_data = filtered_historical_data
+            historical_data = filter_data_by_platform_ids(historical_data, current_platform_ids)
 
         for source_id, titles_data in historical_data.items():
             if source_id not in historical_titles:
@@ -931,24 +968,12 @@ def format_rank_display(ranks: List[int], rank_threshold: int, format_type: str)
     min_rank = unique_ranks[0]
     max_rank = unique_ranks[-1]
 
-    if format_type == "html":
-        highlight_start = "<font color='red'><strong>"
-        highlight_end = "</strong></font>"
-    elif format_type == "feishu":
-        highlight_start = "<font color='red'>**"
-        highlight_end = "**</font>"
-    elif format_type == "dingtalk":
-        highlight_start = "**"
-        highlight_end = "**"
-    elif format_type == "wework":
-        highlight_start = "**"
-        highlight_end = "**"
-    elif format_type == "telegram":
-        highlight_start = "<b>"
-        highlight_end = "</b>"
-    else:
-        highlight_start = "**"
-        highlight_end = "**"
+    _RANK_HIGHLIGHTS = {
+        "html": ("<font color='red'><strong>", "</strong></font>"),
+        "feishu": ("<font color='red'>**", "**</font>"),
+        "telegram": ("<b>", "</b>"),
+    }
+    highlight_start, highlight_end = _RANK_HIGHLIGHTS.get(format_type, ("**", "**"))
 
     if min_rank <= rank_threshold:
         if min_rank == max_rank:
@@ -1114,41 +1139,14 @@ def count_word_frequency(
                     if source_id not in word_stats[group_key]["titles"]:
                         word_stats[group_key]["titles"][source_id] = []
 
-                first_time = ""
-                last_time = ""
-                count_info = 1
                 ranks = source_ranks if source_ranks else []
-                url = source_url
-                mobile_url = source_mobile_url
 
-                # 对于 current 模式，从历史统计信息中获取完整数据
-                if (
-                        mode == "current"
-                        and title_info
-                        and source_id in title_info
-                        and title in title_info[source_id]
-                ):
-                    info = title_info[source_id][title]
-                    first_time = info.get("first_time", "")
-                    last_time = info.get("last_time", "")
-                    count_info = info.get("count", 1)
-                    if "ranks" in info and info["ranks"]:
-                        ranks = info["ranks"]
-                    url = info.get("url", source_url)
-                    mobile_url = info.get("mobileUrl", source_mobile_url)
-                elif (
-                        title_info
-                        and source_id in title_info
-                        and title in title_info[source_id]
-                ):
-                    info = title_info[source_id][title]
-                    first_time = info.get("first_time", "")
-                    last_time = info.get("last_time", "")
-                    count_info = info.get("count", 1)
-                    if "ranks" in info and info["ranks"]:
-                        ranks = info["ranks"]
-                    url = info.get("url", source_url)
-                    mobile_url = info.get("mobileUrl", source_mobile_url)
+                first_time, last_time, count_info, ranks, url, mobile_url = (
+                    extract_title_info(
+                        title_info, source_id, title,
+                        ranks, source_url, source_mobile_url,
+                    )
+                )
 
                 if not ranks:
                     ranks = [99]
@@ -1382,91 +1380,49 @@ def format_title_for_platform(
 
     cleaned_title = clean_title(title_data["title"])
 
-    if platform == "feishu":
-        if link_url:
-            formatted_title = f"[{cleaned_title}]({link_url})"
+    if platform in ("feishu", "dingtalk", "wework", "telegram"):
+        # 格式化链接标题
+        if platform == "telegram":
+            formatted_title = (
+                f'<a href="{link_url}">{html_escape(cleaned_title)}</a>'
+                if link_url else cleaned_title
+            )
         else:
-            formatted_title = cleaned_title
+            formatted_title = (
+                f"[{cleaned_title}]({link_url})" if link_url else cleaned_title
+            )
 
         title_prefix = "🆕 " if title_data.get("is_new") else ""
 
+        # 来源前缀
         if show_source:
-            result = f"<font color='grey'>[{title_data['source_name']}]</font> {title_prefix}{formatted_title}"
+            if platform == "feishu":
+                source_prefix = f"<font color='grey'>[{title_data['source_name']}]</font> "
+            else:
+                source_prefix = f"[{title_data['source_name']}] "
+            result = f"{source_prefix}{title_prefix}{formatted_title}"
         else:
             result = f"{title_prefix}{formatted_title}"
 
         if rank_display:
             result += f" {rank_display}"
-        if title_data["time_display"]:
-            result += f" <font color='grey'>- {title_data['time_display']}</font>"
-        if title_data["count"] > 1:
-            result += f" <font color='green'>({title_data['count']}次)</font>"
 
-        return result
-
-    elif platform == "dingtalk":
-        if link_url:
-            formatted_title = f"[{cleaned_title}]({link_url})"
-        else:
-            formatted_title = cleaned_title
-
-        title_prefix = "🆕 " if title_data.get("is_new") else ""
-
-        if show_source:
-            result = f"[{title_data['source_name']}] {title_prefix}{formatted_title}"
-        else:
-            result = f"{title_prefix}{formatted_title}"
-
-        if rank_display:
-            result += f" {rank_display}"
-        if title_data["time_display"]:
-            result += f" - {title_data['time_display']}"
-        if title_data["count"] > 1:
-            result += f" ({title_data['count']}次)"
-
-        return result
-
-    elif platform == "wework":
-        if link_url:
-            formatted_title = f"[{cleaned_title}]({link_url})"
-        else:
-            formatted_title = cleaned_title
-
-        title_prefix = "🆕 " if title_data.get("is_new") else ""
-
-        if show_source:
-            result = f"[{title_data['source_name']}] {title_prefix}{formatted_title}"
-        else:
-            result = f"{title_prefix}{formatted_title}"
-
-        if rank_display:
-            result += f" {rank_display}"
-        if title_data["time_display"]:
-            result += f" - {title_data['time_display']}"
-        if title_data["count"] > 1:
-            result += f" ({title_data['count']}次)"
-
-        return result
-
-    elif platform == "telegram":
-        if link_url:
-            formatted_title = f'<a href="{link_url}">{html_escape(cleaned_title)}</a>'
-        else:
-            formatted_title = cleaned_title
-
-        title_prefix = "🆕 " if title_data.get("is_new") else ""
-
-        if show_source:
-            result = f"[{title_data['source_name']}] {title_prefix}{formatted_title}"
-        else:
-            result = f"{title_prefix}{formatted_title}"
-
-        if rank_display:
-            result += f" {rank_display}"
-        if title_data["time_display"]:
-            result += f" <code>- {title_data['time_display']}</code>"
-        if title_data["count"] > 1:
-            result += f" <code>({title_data['count']}次)</code>"
+        # 时间和次数后缀（各平台使用不同标记语法）
+        if platform == "feishu":
+            if title_data["time_display"]:
+                result += f" <font color='grey'>- {title_data['time_display']}</font>"
+            if title_data["count"] > 1:
+                result += f" <font color='green'>({title_data['count']}次)</font>"
+        elif platform == "telegram":
+            if title_data["time_display"]:
+                result += f" <code>- {title_data['time_display']}</code>"
+            if title_data["count"] > 1:
+                result += f" <code>({title_data['count']}次)</code>"
+        else:  # dingtalk, wework
+            if title_data["time_display"]:
+                result += f" - {title_data['time_display']}"
+            if title_data["count"] > 1:
+                result += f" ({title_data['count']}次)"
 
         return result
 
@@ -2155,13 +2111,16 @@ def render_feishu_content(
         count = stat["count"]
 
         sequence_display = f"<font color='grey'>[{i + 1}/{total_count}]</font>"
+        emoji = get_count_emoji(count)
 
         if count >= 10:
-            text_content += f"🔥 {sequence_display} **{word}** : <font color='red'>{count}</font> 条\n\n"
+            count_display = f"<font color='red'>{count}</font>"
         elif count >= 5:
-            text_content += f"📈 {sequence_display} **{word}** : <font color='orange'>{count}</font> 条\n\n"
+            count_display = f"<font color='orange'>{count}</font>"
         else:
-            text_content += f"📌 {sequence_display} **{word}** : {count} 条\n\n"
+            count_display = str(count)
+
+        text_content += f"{emoji} {sequence_display} **{word}** : {count_display} 条\n\n"
 
         for j, title_data in enumerate(stat["titles"], 1):
             formatted_title = format_title_for_platform(
@@ -2176,13 +2135,7 @@ def render_feishu_content(
             text_content += f"\n{CONFIG['FEISHU_MESSAGE_SEPARATOR']}\n\n"
 
     if not text_content:
-        if mode == "incremental":
-            mode_text = "增量模式下暂无新增匹配的热点词汇"
-        elif mode == "current":
-            mode_text = "当前榜单模式下暂无匹配的热点词汇"
-        else:
-            mode_text = "暂无匹配的热点词汇"
-        text_content = f"📭 {mode_text}\n\n"
+        text_content = f"📭 {get_empty_mode_text(mode)}\n\n"
 
     if report_data["new_titles"]:
         if text_content and "暂无匹配" not in text_content:
@@ -2253,13 +2206,16 @@ def render_dingtalk_content(
             count = stat["count"]
 
             sequence_display = f"[{i + 1}/{total_count}]"
+            emoji = get_count_emoji(count)
 
             if count >= 10:
-                text_content += f"🔥 {sequence_display} **{word}** : **{count}** 条\n\n"
+                count_display = f"**{count}**"
             elif count >= 5:
-                text_content += f"📈 {sequence_display} **{word}** : **{count}** 条\n\n"
+                count_display = f"**{count}**"
             else:
-                text_content += f"📌 {sequence_display} **{word}** : {count} 条\n\n"
+                count_display = str(count)
+
+            text_content += f"{emoji} {sequence_display} **{word}** : {count_display} 条\n\n"
 
             for j, title_data in enumerate(stat["titles"], 1):
                 formatted_title = format_title_for_platform(
@@ -2274,13 +2230,7 @@ def render_dingtalk_content(
                 text_content += f"\n---\n\n"
 
     if not report_data["stats"]:
-        if mode == "incremental":
-            mode_text = "增量模式下暂无新增匹配的热点词汇"
-        elif mode == "current":
-            mode_text = "当前榜单模式下暂无匹配的热点词汇"
-        else:
-            mode_text = "暂无匹配的热点词汇"
-        text_content += f"📭 {mode_text}\n\n"
+        text_content += f"📭 {get_empty_mode_text(mode)}\n\n"
 
     if report_data["new_titles"]:
         if text_content and "暂无匹配" not in text_content:
@@ -2319,6 +2269,41 @@ def render_dingtalk_content(
     return text_content
 
 
+_BATCH_FORMAT_CONFIG = {
+    "wework": {
+        "bold": "**",
+        "header_fmt": "**总新闻数：** {total}\n\n\n\n",
+        "footer_fmt": "\n\n\n> 更新时间：{time}",
+        "footer_update_fmt": "\n> TrendRadar 发现新版本 **{remote}**，当前 **{current}**",
+        "stats_header": "📊 **热点词汇统计**\n\n",
+        "word_fmt": lambda emoji, seq, word, count: f"{emoji} {seq} **{word}** : {'**' + str(count) + '**' if count >= 5 else str(count)} 条\n\n",
+        "separator": "\n\n\n\n",
+        "new_header_fmt": "\n\n\n\n🆕 **本次新增热点新闻** (共 {count} 条)\n\n",
+        "source_fmt": lambda name, count: f"**{name}** ({count} 条):\n\n",
+        "failed_header": "\n\n\n\n⚠️ **数据获取失败的平台：**\n\n",
+    },
+    "telegram": {
+        "bold": "",
+        "header_fmt": "总新闻数： {total}\n\n",
+        "footer_fmt": "\n\n更新时间：{time}",
+        "footer_update_fmt": "\nTrendRadar 发现新版本 {remote}，当前 {current}",
+        "stats_header": "📊 热点词汇统计\n\n",
+        "word_fmt": lambda emoji, seq, word, count: f"{emoji} {seq} {word} : {count} 条\n\n",
+        "separator": "\n\n",
+        "new_header_fmt": "\n\n🆕 本次新增热点新闻 (共 {count} 条)\n\n",
+        "source_fmt": lambda name, count: f"{name} ({count} 条):\n\n",
+        "failed_header": "\n\n⚠️ 数据获取失败的平台：\n\n",
+    },
+}
+
+
+def _format_title_or_fallback(format_type: str, title_data: Dict, show_source: bool) -> str:
+    """在split_content_into_batches中格式化标题，支持wework/telegram或回退到纯文本"""
+    if format_type in _BATCH_FORMAT_CONFIG:
+        return format_title_for_platform(format_type, title_data, show_source=show_source)
+    return title_data["title"]
+
+
 def split_content_into_batches(
         report_data: Dict,
         format_type: str,
@@ -2328,34 +2313,21 @@ def split_content_into_batches(
 ) -> List[str]:
     """分批处理消息内容，确保词组标题+至少第一条新闻的完整性"""
     batches = []
+    fmt = _BATCH_FORMAT_CONFIG.get(format_type, _BATCH_FORMAT_CONFIG["telegram"])
 
     total_titles = sum(
         len(stat["titles"]) for stat in report_data["stats"] if stat["count"] > 0
     )
     now = get_beijing_time()
 
-    base_header = ""
-    if format_type == "wework":
-        base_header = f"**总新闻数：** {total_titles}\n\n\n\n"
-    elif format_type == "telegram":
-        base_header = f"总新闻数： {total_titles}\n\n"
+    base_header = fmt["header_fmt"].format(total=total_titles)
+    base_footer = fmt["footer_fmt"].format(time=now.strftime('%Y-%m-%d %H:%M:%S'))
+    if update_info:
+        base_footer += fmt["footer_update_fmt"].format(
+            remote=update_info['remote_version'], current=update_info['current_version']
+        )
 
-    base_footer = ""
-    if format_type == "wework":
-        base_footer = f"\n\n\n> 更新时间：{now.strftime('%Y-%m-%d %H:%M:%S')}"
-        if update_info:
-            base_footer += f"\n> TrendRadar 发现新版本 **{update_info['remote_version']}**，当前 **{update_info['current_version']}**"
-    elif format_type == "telegram":
-        base_footer = f"\n\n更新时间：{now.strftime('%Y-%m-%d %H:%M:%S')}"
-        if update_info:
-            base_footer += f"\nTrendRadar 发现新版本 {update_info['remote_version']}，当前 {update_info['current_version']}"
-
-    stats_header = ""
-    if report_data["stats"]:
-        if format_type == "wework":
-            stats_header = f"📊 **热点词汇统计**\n\n"
-        elif format_type == "telegram":
-            stats_header = f"📊 热点词汇统计\n\n"
+    stats_header = fmt["stats_header"] if report_data["stats"] else ""
 
     current_batch = base_header
     current_batch_has_content = False
@@ -2365,32 +2337,29 @@ def split_content_into_batches(
             and not report_data["new_titles"]
             and not report_data["failed_ids"]
     ):
-        if mode == "incremental":
-            mode_text = "增量模式下暂无新增匹配的热点词汇"
-        elif mode == "current":
-            mode_text = "当前榜单模式下暂无匹配的热点词汇"
-        else:
-            mode_text = "暂无匹配的热点词汇"
-        simple_content = f"📭 {mode_text}\n\n"
+        simple_content = f"📭 {get_empty_mode_text(mode)}\n\n"
         final_content = base_header + simple_content + base_footer
         batches.append(final_content)
         return batches
+
+    def _try_append(content_to_add):
+        """尝试将内容追加到当前批次，超出则开新批次。返回更新后的 (current_batch, has_content)"""
+        nonlocal current_batch, current_batch_has_content
+        test = current_batch + content_to_add
+        if len(test.encode("utf-8")) + len(base_footer.encode("utf-8")) >= max_bytes:
+            if current_batch_has_content:
+                batches.append(current_batch + base_footer)
+            return True  # needs new batch
+        current_batch = test
+        current_batch_has_content = True
+        return False  # fits
 
     # 处理热点词汇统计
     if report_data["stats"]:
         total_count = len(report_data["stats"])
 
         # 添加统计标题
-        test_content = current_batch + stats_header
-        if (
-                len(test_content.encode("utf-8")) + len(base_footer.encode("utf-8"))
-                < max_bytes
-        ):
-            current_batch = test_content
-            current_batch_has_content = True
-        else:
-            if current_batch_has_content:
-                batches.append(current_batch + base_footer)
+        if _try_append(stats_header):
             current_batch = base_header + stats_header
             current_batch_has_content = True
 
@@ -2400,104 +2369,39 @@ def split_content_into_batches(
             count = stat["count"]
             sequence_display = f"[{i + 1}/{total_count}]"
 
-            # 构建词组标题
-            word_header = ""
-            if format_type == "wework":
-                if count >= 10:
-                    word_header = (
-                        f"🔥 {sequence_display} **{word}** : **{count}** 条\n\n"
-                    )
-                elif count >= 5:
-                    word_header = (
-                        f"📈 {sequence_display} **{word}** : **{count}** 条\n\n"
-                    )
-                else:
-                    word_header = f"📌 {sequence_display} **{word}** : {count} 条\n\n"
-            elif format_type == "telegram":
-                if count >= 10:
-                    word_header = f"🔥 {sequence_display} {word} : {count} 条\n\n"
-                elif count >= 5:
-                    word_header = f"📈 {sequence_display} {word} : {count} 条\n\n"
-                else:
-                    word_header = f"📌 {sequence_display} {word} : {count} 条\n\n"
+            word_header = fmt["word_fmt"](get_count_emoji(count), sequence_display, word, count)
 
             # 构建第一条新闻
             first_news_line = ""
             if stat["titles"]:
-                first_title_data = stat["titles"][0]
-                if format_type == "wework":
-                    formatted_title = format_title_for_platform(
-                        "wework", first_title_data, show_source=True
-                    )
-                elif format_type == "telegram":
-                    formatted_title = format_title_for_platform(
-                        "telegram", first_title_data, show_source=True
-                    )
-                else:
-                    formatted_title = f"{first_title_data['title']}"
-
+                formatted_title = _format_title_or_fallback(format_type, stat["titles"][0], show_source=True)
                 first_news_line = f"  1. {formatted_title}\n"
                 if len(stat["titles"]) > 1:
                     first_news_line += "\n"
 
             # 原子性检查：词组标题+第一条新闻必须一起处理
             word_with_first_news = word_header + first_news_line
-            test_content = current_batch + word_with_first_news
 
-            if (
-                    len(test_content.encode("utf-8")) + len(base_footer.encode("utf-8"))
-                    >= max_bytes
-            ):
-                # 当前批次容纳不下，开启新批次
-                if current_batch_has_content:
-                    batches.append(current_batch + base_footer)
+            if _try_append(word_with_first_news):
                 current_batch = base_header + stats_header + word_with_first_news
                 current_batch_has_content = True
-                start_index = 1
-            else:
-                current_batch = test_content
-                current_batch_has_content = True
-                start_index = 1
+            start_index = 1
 
             # 处理剩余新闻条目
             for j in range(start_index, len(stat["titles"])):
-                title_data = stat["titles"][j]
-                if format_type == "wework":
-                    formatted_title = format_title_for_platform(
-                        "wework", title_data, show_source=True
-                    )
-                elif format_type == "telegram":
-                    formatted_title = format_title_for_platform(
-                        "telegram", title_data, show_source=True
-                    )
-                else:
-                    formatted_title = f"{title_data['title']}"
+                formatted_title = _format_title_or_fallback(format_type, stat["titles"][j], show_source=True)
 
                 news_line = f"  {j + 1}. {formatted_title}\n"
                 if j < len(stat["titles"]) - 1:
                     news_line += "\n"
 
-                test_content = current_batch + news_line
-                if (
-                        len(test_content.encode("utf-8")) + len(base_footer.encode("utf-8"))
-                        >= max_bytes
-                ):
-                    if current_batch_has_content:
-                        batches.append(current_batch + base_footer)
+                if _try_append(news_line):
                     current_batch = base_header + stats_header + word_header + news_line
-                    current_batch_has_content = True
-                else:
-                    current_batch = test_content
                     current_batch_has_content = True
 
             # 词组间分隔符
             if i < len(report_data["stats"]) - 1:
-                separator = ""
-                if format_type == "wework":
-                    separator = f"\n\n\n\n"
-                elif format_type == "telegram":
-                    separator = f"\n\n"
-
+                separator = fmt["separator"]
                 test_content = current_batch + separator
                 if (
                         len(test_content.encode("utf-8")) + len(base_footer.encode("utf-8"))
@@ -2507,140 +2411,57 @@ def split_content_into_batches(
 
     # 处理新增新闻（同样确保来源标题+第一条新闻的原子性）
     if report_data["new_titles"]:
-        new_header = ""
-        if format_type == "wework":
-            new_header = f"\n\n\n\n🆕 **本次新增热点新闻** (共 {report_data['total_new_count']} 条)\n\n"
-        elif format_type == "telegram":
-            new_header = (
-                f"\n\n🆕 本次新增热点新闻 (共 {report_data['total_new_count']} 条)\n\n"
-            )
+        new_header = fmt["new_header_fmt"].format(count=report_data['total_new_count'])
 
-        test_content = current_batch + new_header
-        if (
-                len(test_content.encode("utf-8")) + len(base_footer.encode("utf-8"))
-                >= max_bytes
-        ):
-            if current_batch_has_content:
-                batches.append(current_batch + base_footer)
+        if _try_append(new_header):
             current_batch = base_header + new_header
-            current_batch_has_content = True
-        else:
-            current_batch = test_content
             current_batch_has_content = True
 
         # 逐个处理新增新闻来源
         for source_data in report_data["new_titles"]:
-            source_header = ""
-            if format_type == "wework":
-                source_header = f"**{source_data['source_name']}** ({len(source_data['titles'])} 条):\n\n"
-            elif format_type == "telegram":
-                source_header = f"{source_data['source_name']} ({len(source_data['titles'])} 条):\n\n"
+            source_header = fmt["source_fmt"](source_data['source_name'], len(source_data['titles']))
 
             # 构建第一条新增新闻
             first_news_line = ""
             if source_data["titles"]:
-                first_title_data = source_data["titles"][0]
-                title_data_copy = first_title_data.copy()
+                title_data_copy = source_data["titles"][0].copy()
                 title_data_copy["is_new"] = False
-
-                if format_type == "wework":
-                    formatted_title = format_title_for_platform(
-                        "wework", title_data_copy, show_source=False
-                    )
-                elif format_type == "telegram":
-                    formatted_title = format_title_for_platform(
-                        "telegram", title_data_copy, show_source=False
-                    )
-                else:
-                    formatted_title = f"{title_data_copy['title']}"
-
+                formatted_title = _format_title_or_fallback(format_type, title_data_copy, show_source=False)
                 first_news_line = f"  1. {formatted_title}\n"
 
             # 原子性检查：来源标题+第一条新闻
             source_with_first_news = source_header + first_news_line
-            test_content = current_batch + source_with_first_news
 
-            if (
-                    len(test_content.encode("utf-8")) + len(base_footer.encode("utf-8"))
-                    >= max_bytes
-            ):
-                if current_batch_has_content:
-                    batches.append(current_batch + base_footer)
+            if _try_append(source_with_first_news):
                 current_batch = base_header + new_header + source_with_first_news
                 current_batch_has_content = True
-                start_index = 1
-            else:
-                current_batch = test_content
-                current_batch_has_content = True
-                start_index = 1
+            start_index = 1
 
             # 处理剩余新增新闻
             for j in range(start_index, len(source_data["titles"])):
-                title_data = source_data["titles"][j]
-                title_data_copy = title_data.copy()
+                title_data_copy = source_data["titles"][j].copy()
                 title_data_copy["is_new"] = False
-
-                if format_type == "wework":
-                    formatted_title = format_title_for_platform(
-                        "wework", title_data_copy, show_source=False
-                    )
-                elif format_type == "telegram":
-                    formatted_title = format_title_for_platform(
-                        "telegram", title_data_copy, show_source=False
-                    )
-                else:
-                    formatted_title = f"{title_data_copy['title']}"
+                formatted_title = _format_title_or_fallback(format_type, title_data_copy, show_source=False)
 
                 news_line = f"  {j + 1}. {formatted_title}\n"
 
-                test_content = current_batch + news_line
-                if (
-                        len(test_content.encode("utf-8")) + len(base_footer.encode("utf-8"))
-                        >= max_bytes
-                ):
-                    if current_batch_has_content:
-                        batches.append(current_batch + base_footer)
+                if _try_append(news_line):
                     current_batch = base_header + new_header + source_header + news_line
-                    current_batch_has_content = True
-                else:
-                    current_batch = test_content
                     current_batch_has_content = True
 
             current_batch += "\n"
 
     if report_data["failed_ids"]:
-        failed_header = ""
-        if format_type == "wework":
-            failed_header = f"\n\n\n\n⚠️ **数据获取失败的平台：**\n\n"
-        elif format_type == "telegram":
-            failed_header = f"\n\n⚠️ 数据获取失败的平台：\n\n"
+        failed_header = fmt["failed_header"]
 
-        test_content = current_batch + failed_header
-        if (
-                len(test_content.encode("utf-8")) + len(base_footer.encode("utf-8"))
-                >= max_bytes
-        ):
-            if current_batch_has_content:
-                batches.append(current_batch + base_footer)
+        if _try_append(failed_header):
             current_batch = base_header + failed_header
-            current_batch_has_content = True
-        else:
-            current_batch = test_content
             current_batch_has_content = True
 
         for i, id_value in enumerate(report_data["failed_ids"], 1):
             failed_line = f"  • {id_value}\n"
-            test_content = current_batch + failed_line
-            if (
-                    len(test_content.encode("utf-8")) + len(base_footer.encode("utf-8"))
-                    >= max_bytes
-            ):
-                if current_batch_has_content:
-                    batches.append(current_batch + base_footer)
+            if _try_append(failed_line):
                 current_batch = base_header + failed_header + failed_line
-                current_batch_has_content = True
-            else:
-                current_batch = test_content
                 current_batch_has_content = True
 
     # 完成最后批次
@@ -2648,6 +2469,80 @@ def split_content_into_batches(
         batches.append(current_batch + base_footer)
 
     return batches
+
+
+def send_webhook_request(
+        url: str,
+        payload: Dict,
+        proxies: Optional[Dict],
+        platform_name: str,
+        report_type: str,
+        success_check: str = "status_code",
+) -> bool:
+    """发送单次webhook请求的通用方法
+
+    success_check:
+        "status_code" — 仅检查HTTP 200（飞书）
+        "errcode" — 检查response.json().errcode==0（钉钉/企业微信）
+        "ok" — 检查response.json().ok（Telegram）
+    """
+    headers = {"Content-Type": "application/json"}
+    try:
+        response = requests.post(
+            url, headers=headers, json=payload, proxies=proxies, timeout=30
+        )
+        if response.status_code == 200:
+            if success_check == "status_code":
+                print(f"{platform_name}通知发送成功 [{report_type}]")
+                return True
+            result = response.json()
+            if success_check == "errcode" and result.get("errcode") == 0:
+                print(f"{platform_name}通知发送成功 [{report_type}]")
+                return True
+            if success_check == "ok" and result.get("ok"):
+                print(f"{platform_name}通知发送成功 [{report_type}]")
+                return True
+            error_key = "errmsg" if success_check == "errcode" else "description"
+            print(f"{platform_name}通知发送失败 [{report_type}]，错误：{result.get(error_key)}")
+            return False
+        else:
+            print(f"{platform_name}通知发送失败 [{report_type}]，状态码：{response.status_code}")
+            return False
+    except Exception as e:
+        print(f"{platform_name}通知发送出错 [{report_type}]：{e}")
+        return False
+
+
+def send_batched_webhook(
+        url: str,
+        batches: List[str],
+        proxies: Optional[Dict],
+        platform_name: str,
+        report_type: str,
+        build_payload,
+        batch_header_fmt: str,
+        success_check: str,
+) -> bool:
+    """分批发送webhook消息的通用方法"""
+    print(f"{platform_name}消息分为 {len(batches)} 批次发送 [{report_type}]")
+
+    for i, batch_content in enumerate(batches, 1):
+        batch_size = len(batch_content.encode("utf-8"))
+        print(f"发送{platform_name}第 {i}/{len(batches)} 批次，大小：{batch_size} 字节 [{report_type}]")
+
+        if len(batches) > 1:
+            batch_content = batch_header_fmt.format(i=i, total=len(batches)) + batch_content
+
+        payload = build_payload(batch_content)
+
+        if not send_webhook_request(url, payload, proxies, f"{platform_name}第 {i}/{len(batches)} 批次", report_type, success_check):
+            return False
+
+        if i < len(batches):
+            time.sleep(CONFIG["BATCH_SEND_INTERVAL"])
+
+    print(f"{platform_name}所有 {len(batches)} 批次发送完成 [{report_type}]")
+    return True
 
 
 def send_to_webhooks(
@@ -2741,8 +2636,6 @@ def send_to_feishu(
         mode: str = "daily",
 ) -> bool:
     """发送到飞书"""
-    headers = {"Content-Type": "application/json"}
-
     text_content = render_feishu_content(report_data, update_info, mode)
     total_titles = sum(
         len(stat["titles"]) for stat in report_data["stats"] if stat["count"] > 0
@@ -2759,23 +2652,9 @@ def send_to_feishu(
         },
     }
 
-    proxies = None
-    if proxy_url:
-        proxies = {"http": proxy_url, "https": proxy_url}
-
-    try:
-        response = requests.post(
-            webhook_url, headers=headers, json=payload, proxies=proxies, timeout=30
-        )
-        if response.status_code == 200:
-            print(f"飞书通知发送成功 [{report_type}]")
-            return True
-        else:
-            print(f"飞书通知发送失败 [{report_type}]，状态码：{response.status_code}")
-            return False
-    except Exception as e:
-        print(f"飞书通知发送出错 [{report_type}]：{e}")
-        return False
+    return send_webhook_request(
+        webhook_url, payload, build_proxies(proxy_url), "飞书", report_type, "status_code"
+    )
 
 
 def send_to_dingtalk(
@@ -2787,8 +2666,6 @@ def send_to_dingtalk(
         mode: str = "daily",
 ) -> bool:
     """发送到钉钉"""
-    headers = {"Content-Type": "application/json"}
-
     text_content = render_dingtalk_content(report_data, update_info, mode)
 
     payload = {
@@ -2799,28 +2676,9 @@ def send_to_dingtalk(
         },
     }
 
-    proxies = None
-    if proxy_url:
-        proxies = {"http": proxy_url, "https": proxy_url}
-
-    try:
-        response = requests.post(
-            webhook_url, headers=headers, json=payload, proxies=proxies, timeout=30
-        )
-        if response.status_code == 200:
-            result = response.json()
-            if result.get("errcode") == 0:
-                print(f"钉钉通知发送成功 [{report_type}]")
-                return True
-            else:
-                print(f"钉钉通知发送失败 [{report_type}]，错误：{result.get('errmsg')}")
-                return False
-        else:
-            print(f"钉钉通知发送失败 [{report_type}]，状态码：{response.status_code}")
-            return False
-    except Exception as e:
-        print(f"钉钉通知发送出错 [{report_type}]：{e}")
-        return False
+    return send_webhook_request(
+        webhook_url, payload, build_proxies(proxy_url), "钉钉", report_type, "errcode"
+    )
 
 
 def send_to_wework(
@@ -2832,57 +2690,18 @@ def send_to_wework(
         mode: str = "daily",
 ) -> bool:
     """发送到企业微信（支持分批发送）"""
-    headers = {"Content-Type": "application/json"}
-    proxies = None
-    if proxy_url:
-        proxies = {"http": proxy_url, "https": proxy_url}
-
-    # 获取分批内容
     batches = split_content_into_batches(report_data, "wework", update_info, mode=mode)
 
-    print(f"企业微信消息分为 {len(batches)} 批次发送 [{report_type}]")
-
-    # 逐批发送
-    for i, batch_content in enumerate(batches, 1):
-        batch_size = len(batch_content.encode("utf-8"))
-        print(
-            f"发送企业微信第 {i}/{len(batches)} 批次，大小：{batch_size} 字节 [{report_type}]"
-        )
-
-        # 添加批次标识
-        if len(batches) > 1:
-            batch_header = f"**[第 {i}/{len(batches)} 批次]**\n\n"
-            batch_content = batch_header + batch_content
-
-        payload = {"msgtype": "markdown", "markdown": {"content": batch_content}}
-
-        try:
-            response = requests.post(
-                webhook_url, headers=headers, json=payload, proxies=proxies, timeout=30
-            )
-            if response.status_code == 200:
-                result = response.json()
-                if result.get("errcode") == 0:
-                    print(f"企业微信第 {i}/{len(batches)} 批次发送成功 [{report_type}]")
-                    # 批次间间隔
-                    if i < len(batches):
-                        time.sleep(CONFIG["BATCH_SEND_INTERVAL"])
-                else:
-                    print(
-                        f"企业微信第 {i}/{len(batches)} 批次发送失败 [{report_type}]，错误：{result.get('errmsg')}"
-                    )
-                    return False
-            else:
-                print(
-                    f"企业微信第 {i}/{len(batches)} 批次发送失败 [{report_type}]，状态码：{response.status_code}"
-                )
-                return False
-        except Exception as e:
-            print(f"企业微信第 {i}/{len(batches)} 批次发送出错 [{report_type}]：{e}")
-            return False
-
-    print(f"企业微信所有 {len(batches)} 批次发送完成 [{report_type}]")
-    return True
+    return send_batched_webhook(
+        url=webhook_url,
+        batches=batches,
+        proxies=build_proxies(proxy_url),
+        platform_name="企业微信",
+        report_type=report_type,
+        build_payload=lambda content: {"msgtype": "markdown", "markdown": {"content": content}},
+        batch_header_fmt="**[第 {i}/{total} 批次]**\n\n",
+        success_check="errcode",
+    )
 
 
 def send_to_telegram(
@@ -2895,66 +2714,27 @@ def send_to_telegram(
         mode: str = "daily",
 ) -> bool:
     """发送到Telegram（支持分批发送）"""
-    headers = {"Content-Type": "application/json"}
     url = f"https://api.telegram.org/bot{bot_token}/sendMessage"
 
-    proxies = None
-    if proxy_url:
-        proxies = {"http": proxy_url, "https": proxy_url}
-
-    # 获取分批内容
     batches = split_content_into_batches(
         report_data, "telegram", update_info, mode=mode
     )
 
-    print(f"Telegram消息分为 {len(batches)} 批次发送 [{report_type}]")
-
-    # 逐批发送
-    for i, batch_content in enumerate(batches, 1):
-        batch_size = len(batch_content.encode("utf-8"))
-        print(
-            f"发送Telegram第 {i}/{len(batches)} 批次，大小：{batch_size} 字节 [{report_type}]"
-        )
-
-        # 添加批次标识
-        if len(batches) > 1:
-            batch_header = f"<b>[第 {i}/{len(batches)} 批次]</b>\n\n"
-            batch_content = batch_header + batch_content
-
-        payload = {
+    return send_batched_webhook(
+        url=url,
+        batches=batches,
+        proxies=build_proxies(proxy_url),
+        platform_name="Telegram",
+        report_type=report_type,
+        build_payload=lambda content: {
             "chat_id": chat_id,
-            "text": batch_content,
+            "text": content,
             "parse_mode": "HTML",
             "disable_web_page_preview": True,
-        }
-
-        try:
-            response = requests.post(
-                url, headers=headers, json=payload, proxies=proxies, timeout=30
-            )
-            if response.status_code == 200:
-                result = response.json()
-                if result.get("ok"):
-                    print(f"Telegram第 {i}/{len(batches)} 批次发送成功 [{report_type}]")
-                    # 批次间间隔
-                    if i < len(batches):
-                        time.sleep(CONFIG["BATCH_SEND_INTERVAL"])
-                else:
-                    print(
-                        f"Telegram第 {i}/{len(batches)} 批次发送失败 [{report_type}]，错误：{result.get('description')}"
-                    )
-                    return False
-            else:
-                print(
-                    f"Telegram第 {i}/{len(batches)} 批次发送失败 [{report_type}]，状态码：{response.status_code}"
-                )
-                return False
-        except Exception as e:
-            print(f"Telegram第 {i}/{len(batches)} 批次发送出错 [{report_type}]：{e}")
-            return False
-
-    print(f"Telegram所有 {len(batches)} 批次发送完成 [{report_type}]")
-    return True
+        },
+        batch_header_fmt="<b>[第 {i}/{total} 批次]</b>\n\n",
+        success_check="ok",
+    )
 
 
 # === 主分析器 ===
